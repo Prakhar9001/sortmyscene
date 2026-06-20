@@ -1,23 +1,15 @@
 # SortMyScene — Event Ticket Booking System
 
-A full-stack event seat reservation and booking application built with the MERN stack.
+A seat reservation + booking app for events, built MERN-style for a take-home assignment. Pick an event, grab some seats, you get a 10-minute hold to confirm before they go back into the pool.
 
----
+## Stack
 
-## Tech Stack
+- **Backend:** Node, Express, MongoDB/Mongoose, JWT auth, bcrypt for passwords
+- **Frontend:** React 18 + Vite, React Router v6, Axios
 
-**Backend:** Node.js, Express.js, MongoDB, Mongoose, JWT (jsonwebtoken), bcryptjs  
-**Frontend:** React 18, React Router v6, Axios, Vite
+## Running it locally
 
----
-
-## Setup Instructions
-
-### Prerequisites
-- Node.js v18+
-- MongoDB running locally (or a MongoDB Atlas URI)
-
----
+You'll need Node 18+ and a MongoDB instance (local `mongod` or an Atlas connection string both work).
 
 ### Backend
 
@@ -26,7 +18,7 @@ cd backend
 npm install
 ```
 
-Create a `.env` file in the `backend/` directory (copy `.env.example` as a starting point):
+Copy `.env.example` to `.env` and fill it in:
 
 ```env
 PORT=5000
@@ -34,30 +26,23 @@ MONGODB_URI=mongodb://localhost:27017/sortmyscene
 JWT_SECRET=your_super_secret_jwt_key_change_in_production
 ```
 
-> **Security note on `JWT_SECRET`:** the value above is a placeholder, not a real secret — it exists only so the app boots out of the box for local development. `.env` is git-ignored and must never be committed. Before deploying anywhere outside your own machine, replace `JWT_SECRET` with a long, random value (e.g. `openssl rand -hex 32`) — anyone who knows this value can forge a valid login token for any user.
+That `JWT_SECRET` value is just a placeholder so the app boots without extra setup — swap it for something random (`openssl rand -hex 32` works fine) before this ever runs anywhere other than your laptop. Whoever holds that secret can mint a valid login token for any user, so don't leave the placeholder in.
 
-Seed sample data (creates 4 events with seats):
-
-```bash
-npm run seed
-```
-
-Start the server:
+Then seed some sample events/seats and start the server:
 
 ```bash
-npm run dev      # Development (with nodemon)
-npm start        # Production
+npm run seed     # creates 4 events with seats
+npm run dev      # nodemon, for actually working on it
+npm start        # plain node, closer to prod
 ```
 
-Server runs on **http://localhost:5000**
+Backend listens on `http://localhost:5000`.
 
-Run the automated test suite (Jest + Supertest, including the concurrency/double-booking tests — see "Testing" below):
+Tests (this includes the concurrency/double-booking stuff, more on that below):
 
 ```bash
 npm test
 ```
-
----
 
 ### Frontend
 
@@ -67,51 +52,46 @@ npm install
 npm run dev
 ```
 
-Frontend runs on **http://localhost:5173**
+Runs on `http://localhost:5173`.
 
----
+## API
 
-## API Documentation
+### Auth
 
-### Authentication
+| Method | Endpoint | Body | Notes |
+|---|---|---|---|
+| POST | `/api/auth/register` | `{ name, email, password }` | returns a JWT |
+| POST | `/api/auth/login` | `{ email, password }` | returns a JWT |
 
-| Method | Endpoint | Body | Description |
-|--------|----------|------|-------------|
-| POST | `/api/auth/register` | `{ name, email, password }` | Register new user, returns JWT |
-| POST | `/api/auth/login` | `{ email, password }` | Login, returns JWT |
-
-All event/reserve/booking endpoints require: `Authorization: Bearer <token>`
-
----
+Everything else needs `Authorization: Bearer <token>`.
 
 ### Events
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/events` | List all events |
-| GET | `/api/events/:id` | Event details + all seat statuses |
+| Method | Endpoint | Notes |
+|---|---|---|
+| GET | `/api/events` | list everything |
+| GET | `/api/events/:id` | event + all its seats |
 
-**GET /api/events/:id response:**
+`GET /api/events/:id` gives you back something like:
+
 ```json
 {
   "event": { "_id": "...", "name": "...", "dateTime": "...", "venue": "...", "totalSeats": 36 },
   "seats": [
-    { "_id": "...", "eventId": "...", "seatNumber": 1, "status": "available" },
-    ...
+    { "_id": "...", "eventId": "...", "seatNumber": 1, "status": "available" }
   ]
 }
 ```
 
----
-
 ### Reserve
 
-| Method | Endpoint | Body / Query | Description |
-|--------|----------|------|-------------|
-| GET | `/api/reserve?eventId=...` | — | Get the caller's active (non-expired) reservation for an event, or `{ "reservation": null }` if none. Used to restore the countdown timer/seat selection on page reload. |
-| POST | `/api/reserve` | `{ eventId, seatNumbers: [1,2,3] }` | Reserve seats for 10 minutes |
+| Method | Endpoint | Body/Query | Notes |
+|---|---|---|---|
+| GET | `/api/reserve?eventId=...` | — | your active reservation for that event, or `{ reservation: null }`. Lets the frontend restore the countdown on a page refresh |
+| POST | `/api/reserve` | `{ eventId, seatNumbers: [1,2,3] }` | holds the seats for 10 minutes |
 
-**Success (201):**
+Success looks like:
+
 ```json
 {
   "reservation": {
@@ -124,20 +104,18 @@ All event/reserve/booking endpoints require: `Authorization: Bearer <token>`
 }
 ```
 
-**Error (409) — seat unavailable:**
+If a seat's already gone you get a 409:
+
 ```json
 { "error": "Seat(s) 1, 2 are no longer available. Please refresh and try again." }
 ```
 
----
-
 ### Bookings
 
-| Method | Endpoint | Body | Description |
-|--------|----------|------|-------------|
-| POST | `/api/bookings` | `{ reservationId }` | Confirm booking, marks seats as booked |
+| Method | Endpoint | Body | Notes |
+|---|---|---|---|
+| POST | `/api/bookings` | `{ reservationId }` | locks in the booking, seats become `booked` |
 
-**Success (200):**
 ```json
 {
   "success": true,
@@ -147,108 +125,70 @@ All event/reserve/booking endpoints require: `Authorization: Bearer <token>`
 }
 ```
 
-**Error (410) — expired:**
+Booking against an expired reservation gives a 410:
+
 ```json
 { "error": "Your reservation has expired. Please select seats and reserve again." }
 ```
 
----
+## Data model
 
-## Database Schema
+**User** — name, email (unique), password (bcrypt hashed)
 
-### User
-| Field | Type | Notes |
-|-------|------|-------|
-| name | String | Required |
-| email | String | Unique, lowercase |
-| password | String | bcrypt hashed, min 6 chars |
+**Event** — name, dateTime, venue, totalSeats
 
-### Event
-| Field | Type | Notes |
-|-------|------|-------|
-| name | String | Required |
-| dateTime | Date | Required |
-| venue | String | Required |
-| totalSeats | Number | Required, min 1 |
+**Seat** — eventId, seatNumber, status (`available` / `reserved` / `booked`). Compound unique index on `(eventId, seatNumber)`.
 
-### Seat
-| Field | Type | Notes |
-|-------|------|-------|
-| eventId | ObjectId | Ref: Event |
-| seatNumber | Number | Unique per event |
-| status | String | `available` \| `reserved` \| `booked` |
+**Reservation** — userId, eventId, seatNumbers[], expiresAt (`now + 10 min`)
 
-Compound unique index on `(eventId, seatNumber)`.
+## Assumptions I made
 
-### Reservation
-| Field | Type | Notes |
-|-------|------|-------|
-| userId | ObjectId | Ref: User |
-| eventId | ObjectId | Ref: Event |
-| seatNumbers | [Number] | Array of reserved seat numbers |
-| expiresAt | Date | `now + 10 minutes` |
+- Spec said "basic auth," so that's register/login with JWT — no OAuth, no email verification.
+- Seats get created by the seed script alongside each event, one document per seat.
+- One active reservation per user per event at a time. You either finish it or let it expire before starting another.
+- A reserve request is all-or-nothing — if any seat in the batch is taken, nothing in that request gets reserved.
+- Didn't use Mongo transactions. They need a replica set, which felt like overkill for a take-home. Instead I lean on atomic single-document `findOneAndUpdate` calls (one per seat) plus an explicit rollback if part of a multi-seat request fails partway through — same end guarantee, works against a plain standalone `mongod`.
+- Every controller checks that `eventId`/`reservationId` are actually valid Mongo ObjectIds and `seatNumbers` are positive integers before any of it touches a query. Otherwise something like `{ "eventId": { "$ne": null } }` would sail straight into a Mongoose filter as a query operator instead of a value — that's the NoSQL injection angle.
 
----
+## How the seat reservation actually works
 
-## Assumptions
+1. Frontend hits `POST /api/reserve` with `eventId` + the seats the user picked.
+2. Backend checks the eventId is real, seatNumbers are sane, and the user doesn't already have a live reservation on this event.
+3. For each seat, one at a time: `Seat.findOneAndUpdate({ eventId, seatNumber, status: 'available' }, { $set: { status: 'reserved' } })`. Each of those calls is atomic on its own.
+4. If every seat in the request got claimed, a `Reservation` gets created with `expiresAt` ten minutes out.
+5. If even one seat in the batch fails, whatever got claimed earlier in that same loop gets rolled back to `available`, and the whole thing returns a 409. No half-reserved leftovers.
+6. Frontend starts a countdown from the response. Refresh the page and `GET /api/reserve?eventId=...` pulls the still-active reservation back so the timer doesn't just vanish.
 
-1. **Authentication scope:** Basic JWT auth is implemented (register + login). No OAuth or email verification — the spec calls for "basic" auth.
-2. **Seat creation:** Seats are pre-created via the seed script when an event is added. Each event has exactly `totalSeats` seat documents.
-3. **One reservation per user per event:** A user can only hold one active reservation per event at a time. They must complete or wait for expiry before reserving again.
-4. **No partial booking:** All seats in a reserve request must be available. If even one is taken, the entire request fails and nothing is reserved.
-5. **No replica set required:** `reservationController.js` and `bookingController.js` use single-document atomic `findOneAndUpdate`/`updateMany` calls instead of multi-document Mongoose transactions, so the app runs against a standalone `mongod` with no replica set needed. The compound unique index on `Seat` plus the `status: 'available'` guard on every update still guarantee exactly-once seat reservation (see Design Decisions below). If a multi-seat reserve request partially succeeds and then hits an unavailable seat, the already-claimed seats in that request are explicitly rolled back to `available` before returning the 409 — no orphaned reservations are left behind.
-6. **Input validation against NoSQL injection:** Every controller validates that user-supplied `eventId`/`reservationId` are well-formed Mongo ObjectId strings and that `seatNumbers` are positive integers (`utils/validate.js`) before they reach a query. Without this, a payload like `{ "eventId": { "$ne": null } }` would be passed straight into a Mongoose filter, since Express/Mongoose don't reject query-operator objects in place of expected scalars by default.
+## Expiry
 
----
+Two things handle this, working together:
 
-## Design Decisions
+- At booking time, the backend checks `reservation.expiresAt < now` directly and bails with a 410 if it's stale.
+- A background job runs every 30 seconds, finds reservations past their `expiresAt`, puts their seats back to `available`, and deletes the reservation. Without this the seat grid would keep showing seats as "reserved" forever even after the hold lapsed for everyone else looking at it.
 
-### How Seat Reservation Works
+## Double booking — the part that actually matters
 
-When a user clicks Reserve:
-1. The frontend sends `POST /api/reserve` with `{ eventId, seatNumbers }`.
-2. The backend validates `eventId` is a real ObjectId and `seatNumbers` is a non-empty array of positive integers, and checks the user doesn't already hold an active reservation for this event.
-3. For each seat number, in sequence, it runs `Seat.findOneAndUpdate({ eventId, seatNumber, status: 'available' }, { $set: { status: 'reserved' } })`. Each call is atomic at the document level.
-4. If every seat is claimed successfully, a `Reservation` document is created with `expiresAt = now + 10 minutes`.
-5. If any seat in the batch is unavailable, the seats already claimed earlier in that same loop are rolled back to `available` via `Seat.updateMany`, and the request fails with 409 — so a partial reservation is never left behind, even without a DB transaction.
-6. The frontend receives the reservation and starts a countdown timer. On page reload, `GET /api/reserve?eventId=...` restores that timer from the still-active `Reservation` document if one exists.
-
-### How Reservation Expiry Works
-
-Two mechanisms work in tandem:
-
-- **On booking confirmation:** The backend explicitly checks `reservation.expiresAt < now` before proceeding. Expired reservations are rejected with HTTP 410.
-- **Background cleanup job:** Runs every 30 seconds on the server. Finds all `Reservation` documents where `expiresAt < now`, resets their seats back to `available`, and deletes the reservation documents. This ensures the seat grid reflects true availability for other users.
-
-### How Double Booking Prevention Works
-
-This is the critical constraint. The solution uses **MongoDB's document-level atomic writes**:
+The whole thing hinges on Mongo's document-level atomicity:
 
 ```js
 Seat.findOneAndUpdate(
-  { eventId, seatNumber, status: 'available' },  // condition
-  { $set: { status: 'reserved' } }                // update
+  { eventId, seatNumber, status: 'available' },
+  { $set: { status: 'reserved' } }
 )
 ```
 
-If two requests arrive simultaneously for the same seat:
-- MongoDB serializes writes to the same document — there is no race window between the read of `status` and the write, because the condition and the update happen as a single atomic operation on the storage engine.
-- The first request finds `status: 'available'` → succeeds → returns the updated document.
-- The second request now finds `status: 'reserved'` → **condition fails** → `findOneAndUpdate` returns `null` (no matching document), and nothing is modified.
-- The backend detects `null`, adds that seat number to the failure list, rolls back any seats it had already claimed in the same request, and returns a 409 error.
+Two requests landing on the same seat at the same instant don't race each other the way you'd expect in app code — Mongo serializes writes to a single document, so there's no gap between "read the status" and "write the status" for anyone else to slip into. First one in finds `available`, updates it, gets the doc back. Second one finds the seat already `reserved`, the filter doesn't match anything, `findOneAndUpdate` hands back `null`, and nothing changes. Backend treats that `null` as "this seat's gone," rolls back anything else it grabbed in the same request, and 409s.
 
-This guarantees exactly-once reservation semantics per seat without application-level locking and without needing a multi-document transaction, since each individual seat claim is a single atomic write. It was load-tested with 10, 25, and 50 concurrent reservation requests for the same seat from different users — in every run, exactly one request succeeded and the rest received 409s, with zero exceptions or inconsistent seat states. The compound unique index on `(eventId, seatNumber)` is a second line of defense against duplicate seat documents.
+I didn't just trust the theory here — ran it with 10, 25, and 50 simultaneous reservation requests hitting the same seat from different fake users, and every single time exactly one got through and the rest got 409'd, with the DB ending up in one consistent state. That test is part of the regular suite (`npm test`), not something you have to remember to run separately. The compound unique index on `(eventId, seatNumber)` is the backup in case anything ever tried to insert a duplicate seat doc directly.
 
-### Why This Architecture
+## Why I built it this way
 
-- **Controller/Route separation:** Keeps route definitions clean and business logic testable in isolation.
-- **Atomic per-document writes over transactions:** The spec allows "atomic operations or transactions." Multi-document Mongoose transactions require a replica set, which adds operational overhead for a take-home-sized project. Sequential atomic `findOneAndUpdate` calls with explicit rollback-on-partial-failure give the same exactly-once guarantee per seat with a standalone `mongod`.
-- **JWT in localStorage:** Simple and stateless. For production, HttpOnly cookies would be preferable to prevent XSS.
-- **Vite proxy:** The frontend proxies `/api` requests to the backend, avoiding CORS issues in development and mimicking a real production reverse proxy setup.
-- **Background cleanup vs. TTL index:** A MongoDB TTL index would delete the `Reservation` document automatically, but would **not** reset the seat status. The background job handles both, ensuring seats are returned to the pool on expiry.
-- **Input validation against injection:** All ObjectId and numeric inputs are validated before reaching a Mongoose query (see Assumption 6) to prevent NoSQL query-operator injection via the JSON body or query string.
-
----
+- Routes stay thin, controllers hold the logic — easier to unit test the actual booking behavior without dragging Express into it.
+- Atomic per-seat writes instead of a transaction, because the spec allows either and a replica set is a lot of setup for a project this size. Sequential atomic updates with rollback-on-failure get you the same exactly-once guarantee without it.
+- JWT sits in localStorage. Fine for this scope — in a real production app I'd move to HttpOnly cookies to cut down XSS exposure.
+- Vite's dev proxy forwards `/api` calls to the backend, so there's no CORS fuss locally and it roughly mirrors how a reverse proxy would sit in front of this in prod.
+- Skipped a TTL index for cleanup — it would delete the reservation doc on schedule but wouldn't touch the seat status, leaving seats stuck as "reserved" forever. The background job resets both, so I went with that instead.
+- Input validation against injection-shaped payloads happens before anything reaches Mongoose, for the same reason described above in Assumptions.
 
 ## Testing
 
@@ -257,24 +197,22 @@ cd backend
 npm test
 ```
 
-Runs the full Jest + Supertest suite (`backend/tests/`) against a dedicated `sortmyscene_test` database — it never touches your dev data. Coverage:
+Runs against a separate `sortmyscene_test` database, so it's never going to touch whatever's in your dev DB.
 
-| File | Covers |
+| File | What it covers |
 |---|---|
-| `auth.test.js` | register/login success and failure, NoSQL-injection-shaped payloads rejected |
-| `events.test.js` | list/detail endpoints, auth requirement, invalid/missing event ids |
-| `reservation.test.js` | reserve success, seat already reserved/booked, partial-failure rollback, duplicate active reservation, invalid input rejection, active-reservation lookup |
-| `booking.test.js` | booking success, expired reservation (410), wrong owner (403), missing reservation (404), invalid input, **the cleanup-job race condition that previously let a booking report false success** |
-| `concurrency.test.js` | **the critical test** — fires 10, 25, and 50 truly simultaneous `POST /api/reserve` requests for the same seat from different users and asserts exactly one succeeds, the rest get 409s, and the database ends up in a single consistent state. Also verifies a full reserve→book race between two concurrent winners-take-one-seat. |
-| `rateLimit.test.js` | confirms the login rate limiter actually returns 429 after its threshold, not just that it's wired up |
+| `auth.test.js` | register/login, both happy path and injection-shaped junk getting rejected |
+| `events.test.js` | list/detail, auth requirement, bad/missing ids |
+| `reservation.test.js` | reserve happy path, seat already gone, partial-failure rollback, duplicate active reservation, bad input, lookup of an active reservation |
+| `booking.test.js` | booking success, expired (410), wrong owner (403), missing (404), bad input, and a regression test for a cleanup-job race that used to let a booking falsely report success |
+| `concurrency.test.js` | the one that matters — 10/25/50 truly simultaneous reserve requests for the same seat, checks exactly one wins, plus a reserve→book race between two concurrent "winners" |
+| `rateLimit.test.js` | actually hits the login rate limiter enough times to get a 429, instead of just checking it's wired up |
 
-The concurrency suite runs on every `npm test` — it's not a manual/optional script — so a regression in the double-booking guarantee fails CI, not just a human glancing at seat colors in the browser.
+The concurrency suite isn't a side script you have to remember to run — it's in the normal `npm test` run, so a regression there fails the build instead of just looking wrong in the browser if you happen to notice.
 
----
+## Security notes
 
-## Security Notes
-
-- **Rate limiting:** `/api/auth/login` is capped at 10 attempts / 15 minutes per IP (credential-stuffing protection); `/api/auth/register` is capped at 20 / 15 minutes (registration-spam protection — deliberately more generous, since spam signups are a lower-severity threat than brute-forcing a specific account). Both return `429` with a clear message once exceeded. Disabled only inside the automated test suite via `DISABLE_RATE_LIMIT=true`, which is never set in a normal dev/prod boot.
-- **`helmet`** is applied globally for standard secure headers (CSP, `X-Content-Type-Options`, `X-Frame-Options`, HSTS, etc.).
-- **NoSQL injection:** every controller validates `eventId`/`reservationId` as well-formed ObjectIds and `seatNumbers` as positive integers before they reach a Mongoose query, and `email`/`password`/`name` are checked to be actual strings. Without this, a payload like `{"email": {"$ne": null}}` would be passed straight into a Mongoose filter and match an arbitrary user.
-- **Error responses never leak internals:** the global error handler maps Mongoose `CastError`/`ValidationError` to a generic `400`, and everything else to a generic `500` — raw error messages and stack traces are logged server-side only, never sent to the client.
+- Login is rate-limited to 10 attempts / 15 min per IP. Register is 20 / 15 min — looser on purpose, since spam signups are a smaller problem than someone brute-forcing a specific account. Both just return 429 once you hit the limit. The only place this is turned off is inside the test suite (`DISABLE_RATE_LIMIT=true`), never in a normal dev/prod boot.
+- `helmet` is on globally for the usual headers — CSP, X-Content-Type-Options, X-Frame-Options, HSTS, etc.
+- Same NoSQL injection guard mentioned above: ObjectIds and seat numbers get validated before touching a query, and email/password/name have to actually be strings. Otherwise `{"email": {"$ne": null}}` as a body would happily match the first user in the collection.
+- Errors never leak internals back to the client — Mongoose `CastError`/`ValidationError` become a generic 400, everything else becomes a generic 500. Real error details and stack traces only go to the server logs.
